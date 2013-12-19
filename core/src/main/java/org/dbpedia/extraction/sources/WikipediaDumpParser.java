@@ -98,13 +98,79 @@ public class WikipediaDumpParser
   public WikipediaDumpParser(Reader stream, Language language, Function1<WikiTitle, Boolean> filter, Function1<WikiPage, ?> processor)
   {
     if (stream == null) throw new NullPointerException("file");
-    if (processor == null) throw new NullPointerException("processor");
+    //if (processor == null) throw new NullPointerException("processor");
     
     _stream = stream;
     _language = language;
     _filter = filter;
     _processor = processor;
   }
+
+  //iterator implementation
+  public void prepareIteration()
+  throws IOException, XMLStreamException, InterruptedException
+  {
+    XMLInputFactory factory = XMLInputFactory.newInstance();
+    _reader = factory.createXMLStreamReader(_stream);
+    
+    //from readDump
+    nextTag();
+    // consume <mediawiki> tag
+    requireStartElement(ROOT_ELEM);
+    nextTag();
+    
+    if (_language == null) 
+    {
+      _language = readSiteInfo();
+    } 
+    else 
+    {
+      if (isStartElement(SITEINFO_ELEM)) skipElement(SITEINFO_ELEM, true); 
+    }
+    // now after </siteinfo>
+    
+    //ready to read pages
+  }
+ 
+
+  public void finishUpIteration()
+  throws IOException, XMLStreamException
+  {
+      requireEndElement(ROOT_ELEM);
+
+      _stream.close();
+      _stream = null;
+      _reader.close();
+      _reader = null;
+  }
+
+  public boolean hasNextPage() 
+  throws IOException, XMLStreamException
+  {
+    if(_stream == null || _reader == null) return false;
+
+    boolean isStart = isStartElement(PAGE_ELEM);
+
+    if(!isStart)
+    {
+        finishUpIteration();
+    }
+
+    return isStart;
+  }
+
+  public WikiPage nextPage()
+  throws XMLStreamException, InterruptedException
+  {
+    final WikiPage page = readPage();
+
+    nextTag();
+
+    return page;
+  }
+
+
+  //old iteration process
   
   public void run()
   throws IOException, XMLStreamException, InterruptedException
@@ -191,7 +257,7 @@ public class WikipediaDumpParser
     }
   }
 
-  private void readPage()
+  private WikiPage readPage()
   throws XMLStreamException, InterruptedException
   {
     requireStartElement(PAGE_ELEM);
@@ -225,7 +291,7 @@ public class WikipediaDumpParser
     if (title == null || ! _filter.apply(title))
     {
         while(! isEndElement(PAGE_ELEM)) _reader.next();
-        return;
+        return null;
     }
 
     //Read page id
@@ -259,7 +325,10 @@ public class WikipediaDumpParser
     {
       try
       {
-          _processor.apply(page);
+          if(_processor != null)
+          {
+            _processor.apply(page);
+          }
       }
       catch (Exception e)
       {
@@ -271,6 +340,8 @@ public class WikipediaDumpParser
     }
     
     requireEndElement(PAGE_ELEM);
+
+    return page;
   }
 
   private WikiPage readRevision(WikiTitle title, WikiTitle redirect, String pageId)

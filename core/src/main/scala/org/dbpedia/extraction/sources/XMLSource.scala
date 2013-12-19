@@ -104,15 +104,25 @@ private class MultipleXMLReaderSource(sources: List[() => Reader], language: Lan
 /**
  * XML source which reads from a file
  */
-private class XMLReaderSource(source: () => Reader, language: Language, filter: WikiTitle => Boolean) extends Source
+class XMLReaderSource(source: () => Reader, language: Language, filterFunc: WikiTitle => Boolean) extends Source
 {
     override def foreach[U](proc : WikiPage => U) : Unit = {
       val reader = source()
-      try new WikipediaDumpParser(reader, language, filter.asInstanceOf[WikiTitle => java.lang.Boolean], proc).run()
+      try new WikipediaDumpParser(reader, language, filterFunc.asInstanceOf[WikiTitle => java.lang.Boolean], proc).run()
       finally reader.close()
     }
 
     override def hasDefiniteSize = true
+
+    def iterable = new Iterable[WikiPage] {
+      val reader = source()
+      val dumpParser = new WikipediaDumpParser(reader, language, filterFunc.asInstanceOf[WikiTitle => java.lang.Boolean], null)
+      dumpParser.prepareIteration()
+      def iterator = new Iterator[WikiPage] {
+        def hasNext: Boolean = try { dumpParser.hasNextPage() } catch { case _: Throwable => false }
+        def next: WikiPage = try { dumpParser.nextPage() } catch { case _: Throwable => null }
+      }
+    }
 }
 
 /**
